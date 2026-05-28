@@ -238,14 +238,22 @@ fun CameraPreviewAndCapture(
     Column(
       modifier = Modifier.fillMaxSize()
     ) {
-      // HorizontalCompass takes the full width and sits at the very top (status bar space)
+      // Top: HorizontalCompass takes the full width and sits at the very top (status bar space)
       HorizontalCompass(azimuth = adjustedAzimuth)
+
+      // Telemetry Readout sits directly under the compass, also taking full width
+      OrientationReadout(
+        azimuth = adjustedAzimuth,
+        roll = orientation.roll,
+        pitch = orientation.pitch
+      )
 
       // The rest of the UI controls are padded and aligned to the bottom
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .weight(1f)
+          .safeDrawingPadding() // Handles bottom navigation bar space safely
           .padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.Bottom,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -355,14 +363,6 @@ fun CameraPreviewAndCapture(
           }
         }
       }
-
-      // Bottom: Real-time Orientation Readout HUD (symmetrical matching styling)
-      OrientationReadout(
-        azimuth = adjustedAzimuth,
-        roll = orientation.roll,
-        pitch = orientation.pitch,
-        modifier = Modifier.safeDrawingPadding()
-      )
     }
   }
 }
@@ -374,6 +374,10 @@ fun OrientationReadout(
   pitch: Float,
   modifier: Modifier = Modifier
 ) {
+  val formattedRoll = formatAngle(roll)
+  val formattedPitch = formatAngle(pitch)
+  val formattedAzimuth = (azimuth.toInt() % 360 + 360) % 360
+
   Box(
     modifier = modifier
       .fillMaxWidth()
@@ -381,23 +385,18 @@ fun OrientationReadout(
       .background(Color.Black.copy(alpha = 0.4f))
       .drawBehind {
         val borderThickness = 1.dp.toPx()
+        // Draw bottom border to separate it cleanly from the viewfinder
         drawLine(
           color = Color.White.copy(alpha = 0.25f),
-          start = Offset(0f, 0f),
-          end = Offset(size.width, 0f),
+          start = Offset(0f, size.height),
+          end = Offset(size.width, size.height),
           strokeWidth = borderThickness
         )
       },
     contentAlignment = Alignment.Center
   ) {
     Text(
-      text = String.format(
-        java.util.Locale.US,
-        "AZIMUTH: %03d°  |  ROLL: %+.1f°  |  PITCH: %+.1f°",
-        azimuth.toInt() % 360,
-        roll,
-        pitch
-      ),
+      text = "ROLL: $formattedRoll°  |  AZIMUTH: $formattedAzimuth°  |  PITCH: $formattedPitch°",
       color = Color.White.copy(alpha = 0.9f),
       fontSize = 12.sp,
       fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
@@ -405,5 +404,14 @@ fun OrientationReadout(
       letterSpacing = 0.5.sp,
       maxLines = 1
     )
+  }
+}
+
+private fun formatAngle(value: Float): String {
+  val rounded = Math.round(value)
+  return when {
+    rounded > 0 -> "+$rounded"
+    rounded < 0 -> "$rounded"
+    else -> "0"
   }
 }
