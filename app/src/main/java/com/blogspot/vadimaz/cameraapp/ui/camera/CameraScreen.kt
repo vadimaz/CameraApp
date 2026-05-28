@@ -2,6 +2,7 @@ package com.blogspot.vadimaz.cameraapp.ui.camera
 
 import com.blogspot.vadimaz.cameraapp.ui.compass.HorizontalCompass
 import com.blogspot.vadimaz.cameraapp.sensor.OrientationData
+import com.blogspot.vadimaz.cameraapp.sensor.LocationData
 
 import android.Manifest
 import android.app.Activity
@@ -35,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -97,6 +99,13 @@ fun CameraScreen(
     )
   }
 
+  var hasLocationPermission by remember {
+    mutableStateOf(
+      ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+    )
+  }
+
   val permissionLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.RequestMultiplePermissions(),
     onResult = { permissions ->
@@ -106,12 +115,17 @@ fun CameraScreen(
       } else {
         true
       }
+      hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
     }
   )
 
   // Request permissions if not granted
   LaunchedEffect(Unit) {
-    val permissions = mutableListOf(Manifest.permission.CAMERA)
+    val permissions = mutableListOf(
+      Manifest.permission.CAMERA,
+      Manifest.permission.ACCESS_FINE_LOCATION,
+      Manifest.permission.ACCESS_COARSE_LOCATION
+    )
     if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
       permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
@@ -132,13 +146,18 @@ fun CameraScreen(
   }
 
   val orientation by viewModel.orientation.collectAsStateWithLifecycle()
+  val location by viewModel.location.collectAsStateWithLifecycle()
 
   Box(
     modifier = modifier.fillMaxSize().background(Color.Black),
     contentAlignment = Alignment.Center
   ) {
     if (hasCameraPermission && hasStoragePermission) {
-      CameraPreviewAndCapture(context = context, orientation = orientation)
+      CameraPreviewAndCapture(
+        context = context,
+        orientation = orientation,
+        location = location
+      )
     } else {
       Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -147,7 +166,11 @@ fun CameraScreen(
         Text("Camera and Storage permissions are required to use this feature.", color = Color.White, fontSize = 16.sp)
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = {
-          val permissions = mutableListOf(Manifest.permission.CAMERA)
+          val permissions = mutableListOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+          )
           if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
           }
@@ -163,7 +186,8 @@ fun CameraScreen(
 @Composable
 fun CameraPreviewAndCapture(
   context: Context,
-  orientation: OrientationData
+  orientation: OrientationData,
+  location: LocationData
 ) {
   val lifecycleOwner = LocalLifecycleOwner.current
   var surfaceRequest by remember { mutableStateOf<SurfaceRequest?>(null) }
@@ -248,12 +272,11 @@ fun CameraPreviewAndCapture(
         pitch = orientation.pitch
       )
 
-      // The rest of the UI controls are padded and aligned to the bottom
+      // The rest of the UI controls are padded and aligned to the bottom in the middle space
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .weight(1f)
-          .safeDrawingPadding() // Handles bottom navigation bar space safely
           .padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.Bottom,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -363,6 +386,9 @@ fun CameraPreviewAndCapture(
           }
         }
       }
+
+      // Bottom: LocationReadout GPS coordinates and altitude
+      LocationReadout(location = location)
     }
   }
 }
@@ -413,5 +439,57 @@ private fun formatAngle(value: Float): String {
     rounded > 0 -> "+$rounded"
     rounded < 0 -> "$rounded"
     else -> "0"
+  }
+}
+
+@Composable
+fun LocationReadout(
+  location: LocationData,
+  modifier: Modifier = Modifier
+) {
+  val text = if (location.hasLocation) {
+    val lat = location.latitude
+    val lon = location.longitude
+    val alt = location.altitude
+
+    val latDirection = if (lat >= 0) "N" else "S"
+    val lonDirection = if (lon >= 0) "E" else "W"
+    
+    val latStr = String.format(java.util.Locale.US, "%.6f° %s", Math.abs(lat), latDirection)
+    val lonStr = String.format(java.util.Locale.US, "%.6f° %s", Math.abs(lon), lonDirection)
+    val altStr = String.format(java.util.Locale.US, "%.0fm", alt)
+
+    "LAT: $latStr  |  ALT: $altStr  |  LON: $lonStr"
+  } else {
+    "LAT: --.------°  |  ALT: ----m  |  LON: --.------°"
+  }
+
+  Box(
+    modifier = modifier
+      .fillMaxWidth()
+      .background(Color.Black.copy(alpha = 0.4f))
+      .navigationBarsPadding() // Safe margin from navigation gestures
+      .height(44.dp)
+      .drawBehind {
+        val borderThickness = 1.dp.toPx()
+        // Draw top border to separate it cleanly from the viewfinder
+        drawLine(
+          color = Color.White.copy(alpha = 0.25f),
+          start = Offset(0f, 0f),
+          end = Offset(size.width, 0f),
+          strokeWidth = borderThickness
+        )
+      },
+    contentAlignment = Alignment.Center
+  ) {
+    Text(
+      text = text,
+      color = Color.White.copy(alpha = 0.9f),
+      fontSize = 12.sp,
+      fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+      fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+      letterSpacing = 0.5.sp,
+      maxLines = 1
+    )
   }
 }
