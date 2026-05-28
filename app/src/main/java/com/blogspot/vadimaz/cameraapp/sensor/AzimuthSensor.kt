@@ -9,7 +9,13 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
-fun getAzimuthFlow(context: Context): Flow<Float> = callbackFlow {
+data class OrientationData(
+    val azimuth: Float = 0f,
+    val pitch: Float = 0f,
+    val roll: Float = 0f
+)
+
+fun getOrientationFlow(context: Context): Flow<OrientationData> = callbackFlow {
     val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     val rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
     val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -27,13 +33,16 @@ fun getAzimuthFlow(context: Context): Flow<Float> = callbackFlow {
         return result
     }
 
-    // Function to calculate smoothly blended azimuth based on inclination
-    fun calculateBlendedAzimuth(matrix: FloatArray): Float {
-        // 1. Calculate traditional flat azimuth (heading of the top of the phone)
+    // Function to calculate smoothly blended orientation based on inclination
+    fun calculateBlendedOrientation(matrix: FloatArray): OrientationData {
+        // 1. Calculate traditional flat orientation (heading of the top of the phone + raw pitch/roll)
         val flatOrientation = FloatArray(3)
         SensorManager.getOrientation(matrix, flatOrientation)
         var flatAzimuth = Math.toDegrees(flatOrientation[0].toDouble()).toFloat()
         if (flatAzimuth < 0) flatAzimuth += 360f
+
+        val pitch = Math.toDegrees(flatOrientation[1].toDouble()).toFloat()
+        val roll = Math.toDegrees(flatOrientation[2].toDouble()).toFloat()
 
         // 2. Calculate vertical azimuth (heading of the camera lens, -Z axis)
         val verticalR = FloatArray(9)
@@ -55,7 +64,13 @@ fun getAzimuthFlow(context: Context): Flow<Float> = callbackFlow {
         val t = Math.sqrt((1f - r8 * r8).toDouble()).toFloat()
 
         // 4. Smoothly interpolate between flat and vertical azimuths
-        return interpolateAngles(flatAzimuth, verticalAzimuth, t)
+        val blendedAzimuth = interpolateAngles(flatAzimuth, verticalAzimuth, t)
+
+        return OrientationData(
+            azimuth = blendedAzimuth,
+            pitch = pitch,
+            roll = roll
+        )
     }
 
     val listener = object : SensorEventListener {
@@ -64,14 +79,16 @@ fun getAzimuthFlow(context: Context): Flow<Float> = callbackFlow {
         private var hasAcc = false
         private var hasMag = false
         private var currentAzimuth = 0f
+        private var currentPitch = 0f
+        private var currentRoll = 0f
 
         override fun onSensorChanged(event: SensorEvent) {
-            var targetDegrees = 0f
+            var targetOrientation = OrientationData()
             var sensorDataReceived = false
 
             if (event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {
                 SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
-                targetDegrees = calculateBlendedAzimuth(rotationMatrix)
+                targetOrientation = calculateBlendedOrientation(rotationMatrix)
                 sensorDataReceived = true
             } else {
                 if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
@@ -89,20 +106,33 @@ fun getAzimuthFlow(context: Context): Flow<Float> = callbackFlow {
                         magnetometerReading
                     )
                     if (success) {
-                        targetDegrees = calculateBlendedAzimuth(rotationMatrix)
+                        targetOrientation = calculateBlendedOrientation(rotationMatrix)
                         sensorDataReceived = true
                     }
                 }
             }
 
             if (sensorDataReceived) {
-                // Wrapped Low-Pass Filter for organic, wrapping-aware damping
-                val diff = (targetDegrees - currentAzimuth)
-                val shortestDiff = ((diff + 180f) % 360f - 180f)
-                currentAzimuth += shortestDiff * 0.15f // Dampening factor
+                // Low-pass filter for azimuth (shortest path wrapping)
+                val diffAz = (targetOrientation.azimuth - currentAzimuth)
+                val shortestDiffAz = ((diffAz + 180f) % 360f - 180f)
+                currentAzimuth += shortestDiffAz * 0.15f // Dampening factor
                 if (currentAzimuth < 0) currentAzimuth += 360f
                 if (currentAzimuth >= 360f) currentAzimuth -= 360f
-                trySend(currentAzimuth)
+
+                // Low-pass filter for pitch
+                val diffPitch = (targetOrientation.pitch - currentPitch)
+                currentPitch += diffPitch * 0.15f
+
+                // Low-pass filter for roll
+                val diffRoll = (targetOrientation.roll - currentRoll)
+                currentRoll += diffRoll * 0.15f
+
+                trySend(OrientationData(
+                    azimuth = currentAzimuth,
+                    pitch = currentPitch,
+                    roll = currentRoll
+                ))
             }
         }
 

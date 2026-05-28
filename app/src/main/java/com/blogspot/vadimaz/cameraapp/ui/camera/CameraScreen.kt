@@ -1,6 +1,7 @@
 package com.blogspot.vadimaz.cameraapp.ui.camera
 
 import com.blogspot.vadimaz.cameraapp.ui.compass.HorizontalCompass
+import com.blogspot.vadimaz.cameraapp.sensor.OrientationData
 
 import android.Manifest
 import android.app.Activity
@@ -53,7 +54,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -128,14 +131,14 @@ fun CameraScreen(
     }
   }
 
-  val azimuth by viewModel.azimuth.collectAsStateWithLifecycle()
+  val orientation by viewModel.orientation.collectAsStateWithLifecycle()
 
   Box(
     modifier = modifier.fillMaxSize().background(Color.Black),
     contentAlignment = Alignment.Center
   ) {
     if (hasCameraPermission && hasStoragePermission) {
-      CameraPreviewAndCapture(context = context, azimuth = azimuth)
+      CameraPreviewAndCapture(context = context, orientation = orientation)
     } else {
       Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -160,7 +163,7 @@ fun CameraScreen(
 @Composable
 fun CameraPreviewAndCapture(
   context: Context,
-  azimuth: Float
+  orientation: OrientationData
 ) {
   val lifecycleOwner = LocalLifecycleOwner.current
   var surfaceRequest by remember { mutableStateOf<SurfaceRequest?>(null) }
@@ -211,9 +214,9 @@ fun CameraPreviewAndCapture(
   // Adjust azimuth by 180 degrees if the front camera is active
   val isFrontCamera = lensFacing == CameraSelector.LENS_FACING_FRONT
   val adjustedAzimuth = if (isFrontCamera) {
-    (azimuth + 180f) % 360f
+    (orientation.azimuth + 180f) % 360f
   } else {
-    azimuth
+    orientation.azimuth
   }
 
   Box(modifier = Modifier.fillMaxSize()) {
@@ -243,14 +246,13 @@ fun CameraPreviewAndCapture(
         modifier = Modifier
           .fillMaxWidth()
           .weight(1f)
-          .safeDrawingPadding() // Handles bottom navigation bar space safely
           .padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.Bottom,
         horizontalAlignment = Alignment.CenterHorizontally
       ) {
         // Bottom control panel with Capture button and Toggle Camera button
         Row(
-          modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
+          modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
           horizontalArrangement = Arrangement.Center,
           verticalAlignment = Alignment.CenterVertically
         ) {
@@ -353,6 +355,55 @@ fun CameraPreviewAndCapture(
           }
         }
       }
+
+      // Bottom: Real-time Orientation Readout HUD (symmetrical matching styling)
+      OrientationReadout(
+        azimuth = adjustedAzimuth,
+        roll = orientation.roll,
+        pitch = orientation.pitch,
+        modifier = Modifier.safeDrawingPadding()
+      )
     }
+  }
+}
+
+@Composable
+fun OrientationReadout(
+  azimuth: Float,
+  roll: Float,
+  pitch: Float,
+  modifier: Modifier = Modifier
+) {
+  Box(
+    modifier = modifier
+      .fillMaxWidth()
+      .height(44.dp)
+      .background(Color.Black.copy(alpha = 0.4f))
+      .drawBehind {
+        val borderThickness = 1.dp.toPx()
+        drawLine(
+          color = Color.White.copy(alpha = 0.25f),
+          start = Offset(0f, 0f),
+          end = Offset(size.width, 0f),
+          strokeWidth = borderThickness
+        )
+      },
+    contentAlignment = Alignment.Center
+  ) {
+    Text(
+      text = String.format(
+        java.util.Locale.US,
+        "AZIMUTH: %03d°  |  ROLL: %+.1f°  |  PITCH: %+.1f°",
+        azimuth.toInt() % 360,
+        roll,
+        pitch
+      ),
+      color = Color.White.copy(alpha = 0.9f),
+      fontSize = 12.sp,
+      fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+      fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+      letterSpacing = 0.5.sp,
+      maxLines = 1
+    )
   }
 }
