@@ -21,7 +21,10 @@ import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceRequest
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.viewfinder.compose.MutableCoordinateTransformer
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,9 +37,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -158,6 +166,9 @@ fun CameraPreviewAndCapture(
   var surfaceRequest by remember { mutableStateOf<SurfaceRequest?>(null) }
   val coordinateTransformer = remember { MutableCoordinateTransformer() }
 
+  // State to track lens direction
+  var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
+
   val preview = remember {
     Preview.Builder().build().apply {
       setSurfaceProvider { request -> surfaceRequest = request }
@@ -170,16 +181,16 @@ fun CameraPreviewAndCapture(
       .build()
   }
 
-  val cameraSelector = remember {
+  val cameraSelector = remember(lensFacing) {
     CameraSelector.Builder()
-      .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+      .requireLensFacing(lensFacing)
       .build()
   }
 
   var isCapturing by remember { mutableStateOf(false) }
 
   // Bind Camera Use Cases to Lifecycle
-  LaunchedEffect(context, lifecycleOwner) {
+  LaunchedEffect(context, lifecycleOwner, cameraSelector) {
     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
     cameraProviderFuture.addListener({
       val cameraProvider = cameraProviderFuture.get()
@@ -195,6 +206,14 @@ fun CameraPreviewAndCapture(
         Log.e("CameraScreen", "Use case binding failed", e)
       }
     }, ContextCompat.getMainExecutor(context))
+  }
+
+  // Adjust azimuth by 180 degrees if the front camera is active
+  val isFrontCamera = lensFacing == CameraSelector.LENS_FACING_FRONT
+  val adjustedAzimuth = if (isFrontCamera) {
+    (azimuth + 180f) % 360f
+  } else {
+    azimuth
   }
 
   Box(modifier = Modifier.fillMaxSize()) {
@@ -217,7 +236,7 @@ fun CameraPreviewAndCapture(
       modifier = Modifier.fillMaxSize()
     ) {
       // HorizontalCompass takes the full width and sits at the very top (status bar space)
-      HorizontalCompass(azimuth = azimuth)
+      HorizontalCompass(azimuth = adjustedAzimuth)
 
       // The rest of the UI controls are padded and aligned to the bottom
       Column(
@@ -229,12 +248,16 @@ fun CameraPreviewAndCapture(
         verticalArrangement = Arrangement.Bottom,
         horizontalAlignment = Alignment.CenterHorizontally
       ) {
-        // Bottom control panel with Capture button
+        // Bottom control panel with Capture button and Toggle Camera button
         Row(
           modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
           horizontalArrangement = Arrangement.Center,
           verticalAlignment = Alignment.CenterVertically
         ) {
+          // Empty spacing on the left to keep the Shutter button perfectly centered
+          Spacer(modifier = Modifier.weight(1f))
+
+          // Center: Capture Button
           Button(
             onClick = {
               if (isCapturing) return@Button
@@ -291,6 +314,41 @@ fun CameraPreviewAndCapture(
                     .background(Color.White, CircleShape)
                 )
               }
+            }
+          }
+
+          // Right side: Symmetrical layout container for Flip Button
+          Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.Center
+          ) {
+            var rotationAngle by remember { mutableStateOf(0f) }
+            val animatedRotation by animateFloatAsState(
+              targetValue = rotationAngle,
+              animationSpec = tween(durationMillis = 400)
+            )
+
+            IconButton(
+              onClick = {
+                rotationAngle += 180f
+                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                  CameraSelector.LENS_FACING_FRONT
+                } else {
+                  CameraSelector.LENS_FACING_BACK
+                }
+              },
+              modifier = Modifier
+                .size(56.dp)
+                .rotate(animatedRotation)
+                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+            ) {
+              Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Flip Camera",
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+              )
             }
           }
         }
