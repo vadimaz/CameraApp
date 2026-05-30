@@ -41,10 +41,7 @@ fun getOrientationFlow(context: Context): Flow<OrientationData> = callbackFlow {
         var flatAzimuth = Math.toDegrees(flatOrientation[0].toDouble()).toFloat()
         if (flatAzimuth < 0) flatAzimuth += 360f
 
-        val pitch = Math.toDegrees(flatOrientation[1].toDouble()).toFloat()
-        val roll = Math.toDegrees(flatOrientation[2].toDouble()).toFloat()
-
-        // 2. Calculate vertical azimuth (heading of the camera lens, -Z axis)
+        // 2. Calculate vertical orientation (heading of the camera lens, -Z axis, and pitch/roll in portrait)
         val verticalR = FloatArray(9)
         SensorManager.remapCoordinateSystem(
             matrix,
@@ -56,6 +53,10 @@ fun getOrientationFlow(context: Context): Flow<OrientationData> = callbackFlow {
         SensorManager.getOrientation(verticalR, verticalOrientation)
         var verticalAzimuth = Math.toDegrees(verticalOrientation[0].toDouble()).toFloat()
         if (verticalAzimuth < 0) verticalAzimuth += 360f
+
+        // For pitch and roll, we use the vertical (portrait) orientation remapped with standard axes (AXIS_X, AXIS_Z)
+        val pitch = Math.toDegrees(verticalOrientation[1].toDouble()).toFloat()
+        val roll = Math.toDegrees(verticalOrientation[2].toDouble()).toFloat()
 
         // 3. Compute inclination weight (t) based on the screen's tilt
         // matrix[8] represents the Z-axis vertical component (cosine of tilt)

@@ -5,7 +5,6 @@ import android.graphics.Rect
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -28,9 +27,9 @@ fun LevelIndicator(
     val centerDotRadiusPx = with(density) { 5.5.dp.toPx() } // Hollow center circle radius
     val stubGapPx = with(density) { 5.dp.toPx() }
     
-    // Extremely thin white strokes to match the premium design in the screenshot
-    val strokeThicknessBgPx = with(density) { 2.dp.toPx() } // Subtle underlay shadow
-    val strokeThicknessFgPx = with(density) { 1.dp.toPx() } // Very fine primary line
+    // Overall thickness of lines increased by 50%
+    val strokeThicknessBgPx = with(density) { 3.dp.toPx() } // Subtle underlay shadow (was 2.dp)
+    val strokeThicknessFgPx = with(density) { 1.5.dp.toPx() } // Primary line (was 1.dp)
 
     val pitchSpacingPx = with(density) { 8.dp.toPx() } // Vertical distance per 10 degrees
     val smallTickWidthPx = with(density) { 8.dp.toPx() }
@@ -38,8 +37,22 @@ fun LevelIndicator(
     val labelTextSizePx = with(density) { 9.dp.toPx() }
     val labelOffsetPx = with(density) { 5.dp.toPx() }
 
-    // Exactly matching the screenshot: the HUD uses a clean, premium white color
+    // Color definitions
     val hudColor = Color.White
+    val activeGreenColor = Color(0xFF00E676) // Sleek, modern, high-visibility green
+
+    // Smooth transition logic as values approach 0 degrees
+    // We use a 5-degree threshold: at >= 5°, it is fully white; at 0°, it is fully green.
+    val threshold = 5f
+    
+    val pitchFraction = ((threshold - Math.abs(pitch)) / threshold).coerceIn(0f, 1f)
+    val rollFraction = ((threshold - Math.abs(roll)) / threshold).coerceIn(0f, 1f)
+    val bothFraction = Math.min(pitchFraction, rollFraction)
+
+    val stubColor = lerpColor(hudColor, activeGreenColor, pitchFraction)
+    val mainLineColor = lerpColor(hudColor, activeGreenColor, rollFraction)
+    val circleColor = mainLineColor // Small center circle turns green with roll
+    val arcColor = lerpColor(hudColor, activeGreenColor, bothFraction) // Outer circle turns green with both
 
     Canvas(
         modifier = modifier
@@ -47,20 +60,18 @@ fun LevelIndicator(
         val centerX = size.width / 2f
         val centerY = size.height / 2f
 
-        // The circle diameter is exactly 76% of the screen-width to replicate the screenshot proportions
+        // The circle diameter is exactly 76% of the screen-width
         val radiusPx = size.width * 0.38f
 
         // ==========================================
         // 1. FIXED REFERENCE HORIZON STUBS (Extended to edges)
         // ==========================================
-        // Left stub: starts at the very left edge of the 90% canvas (5% from screen border)
         val leftStubStart = 0f
         val leftStubEnd = centerX - radiusPx - stubGapPx
-        // Right stub: ends at the very right edge of the 90% canvas (5% from screen border)
         val rightStubStart = centerX + radiusPx + stubGapPx
         val rightStubEnd = size.width
 
-        // Subtle dark shadow backdrop for stubs (extremely fine, high readability)
+        // Subtle dark shadow backdrop for stubs
         drawLine(
             color = Color.Black.copy(alpha = 0.15f),
             start = Offset(leftStubStart, centerY),
@@ -74,15 +85,15 @@ fun LevelIndicator(
             strokeWidth = strokeThicknessBgPx
         )
 
-        // Primary white foreground for stubs
+        // Primary foreground for stubs (smoothly colors green as pitch approaches 0)
         drawLine(
-            color = hudColor.copy(alpha = 0.9f),
+            color = stubColor.copy(alpha = 0.9f),
             start = Offset(leftStubStart, centerY),
             end = Offset(leftStubEnd, centerY),
             strokeWidth = strokeThicknessFgPx
         )
         drawLine(
-            color = hudColor.copy(alpha = 0.9f),
+            color = stubColor.copy(alpha = 0.9f),
             start = Offset(rightStubStart, centerY),
             end = Offset(rightStubEnd, centerY),
             strokeWidth = strokeThicknessFgPx
@@ -95,7 +106,6 @@ fun LevelIndicator(
         val arcTopLeft = Offset(centerX - radiusPx, centerY - radiusPx)
 
         // Subtle dark shadow backdrop for arcs
-        // Leave a tiny 3 degrees gap on both sides centered at 0 and 180 degrees
         drawArc(
             color = Color.Black.copy(alpha = 0.15f),
             startAngle = 183f,
@@ -115,9 +125,9 @@ fun LevelIndicator(
             style = Stroke(width = strokeThicknessBgPx)
         )
 
-        // Primary white foreground for arcs
+        // Primary foreground for arcs (smoothly colors green as BOTH pitch and roll approach 0)
         drawArc(
-            color = hudColor.copy(alpha = 0.9f),
+            color = arcColor.copy(alpha = 0.9f),
             startAngle = 183f,
             sweepAngle = 174f,
             useCenter = false,
@@ -126,7 +136,7 @@ fun LevelIndicator(
             style = Stroke(width = strokeThicknessFgPx)
         )
         drawArc(
-            color = hudColor.copy(alpha = 0.9f),
+            color = arcColor.copy(alpha = 0.9f),
             startAngle = 3f,
             sweepAngle = 174f,
             useCenter = false,
@@ -244,7 +254,7 @@ fun LevelIndicator(
         // We rotate the central line & center dot around the canvas center.
         // We use -roll so the line represents a true horizontal horizon.
         rotate(degrees = -roll, pivot = Offset(centerX, centerY)) {
-            // Rotating Line left & right segments (broken in the center and shortened at the ends with stubGapPx offset)
+            // Rotating Line left & right segments
             val lineLeftStart = centerX - radiusPx + stubGapPx
             val lineLeftEnd = centerX - centerDotRadiusPx
             val lineRightStart = centerX + centerDotRadiusPx
@@ -272,27 +282,38 @@ fun LevelIndicator(
                 style = Stroke(width = strokeThicknessBgPx)
             )
 
-            // Primary white foreground for rotating line segments
+            // Primary foreground for rotating line segments (smoothly colors green as roll approaches 0)
             drawLine(
-                color = hudColor,
+                color = mainLineColor,
                 start = Offset(lineLeftStart, centerY),
                 end = Offset(lineLeftEnd, centerY),
                 strokeWidth = strokeThicknessFgPx
             )
             drawLine(
-                color = hudColor,
+                color = mainLineColor,
                 start = Offset(lineRightStart, centerY),
                 end = Offset(lineRightEnd, centerY),
                 strokeWidth = strokeThicknessFgPx
             )
 
-            // Primary white foreground for hollow center circle
+            // Primary foreground for hollow center circle (smoothly colors green as roll approaches 0)
             drawCircle(
-                color = hudColor,
+                color = circleColor,
                 radius = centerDotRadiusPx,
                 center = Offset(centerX, centerY),
                 style = Stroke(width = strokeThicknessFgPx)
             )
         }
     }
+}
+
+// Helper function to smoothly interpolate colors in RGB space
+private fun lerpColor(color1: Color, color2: Color, fraction: Float): Color {
+    val f = fraction.coerceIn(0f, 1f)
+    return Color(
+        red = color1.red + (color2.red - color1.red) * f,
+        green = color1.green + (color2.green - color1.green) * f,
+        blue = color1.blue + (color2.blue - color1.blue) * f,
+        alpha = color1.alpha + (color2.alpha - color1.alpha) * f
+    )
 }
