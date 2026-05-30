@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -258,7 +259,17 @@ fun CameraPreviewAndCapture(
       CircularProgressIndicator(color = Color.White)
     }
 
-    // 2. Overlay UI Controls
+    // 2. Roll & Pitch Level Indicator Overlay
+    LevelIndicator(
+      roll = orientation.roll,
+      pitch = orientation.pitch,
+      modifier = Modifier
+        .fillMaxWidth(0.9f)
+        .aspectRatio(1f)
+        .align(Alignment.Center)
+    )
+
+    // 3. Overlay UI Controls
     Column(
       modifier = Modifier.fillMaxSize()
     ) {
